@@ -102,3 +102,35 @@ export interface PromptAnalysis {
   modifiers: string[];
   negatives: string[];
 }
+
+// Civitai API Types
+export interface CivitaiImage {
+  id: string;
+  url: string;
+  width: number;
+  height: number;
+  prompt: string;
+  negativePrompt: string;
+  seed?: number;
+  model: string;
+}
+
+// Curated Prompt Types
+export interface CuratedPrompt {
+  id: string;
+  category: string;
+  prompt: string;
+  title: string;
+  tags: string[];
+  aspectRatio: string;
+  suggestedParams: {
+    stylize?: number;
+    chaos?: number;
+    weird?: number;
+    quality?: number;
+  };
+  version?: string;
+}
+
+// Search Source Type
+export type SearchSource = 'curated' | 'lexica' | 'civitai';

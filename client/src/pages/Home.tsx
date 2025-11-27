@@ -18,14 +18,15 @@ import {
   Sparkles, Copy, Check, Wand2, Image as ImageIcon, Info, Search,
   Heart, Folder, Plus, Trash2, Edit3, MoreVertical, Globe,
   History, Star, FolderOpen, Download, ChevronDown, ExternalLink,
-  Eye, EyeOff, Settings2, Save, Zap, Shuffle, FileText, Scan
+  Eye, EyeOff, Settings2, Save, Zap, Shuffle, FileText, Scan,
+  Layers, Library, RefreshCw, Tag
 } from "lucide-react";
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { toast } from "sonner";
 import { useLanguage } from "@/contexts/LanguageContext";
-import type { SavedPrompt, PromptGroup, LexicaImage, FilterOptions, AdvancedParams, PromptTemplate, PromptAnalysis } from "@/types";
+import type { SavedPrompt, PromptGroup, LexicaImage, FilterOptions, AdvancedParams, PromptTemplate, PromptAnalysis, CivitaiImage, CuratedPrompt, SearchSource } from "@/types";
 import * as storage from "@/lib/storage";
-import { searchLexicaPrompts, formatLexicaPromptForMidjourney, parsePrompt, getRandomSuggestion, analyzePromptAdvanced, analysisToAdvancedParams, popularSrefCodes } from "@/lib/api";
+import { searchLexicaPrompts, searchCivitaiImages, formatLexicaPromptForMidjourney, parsePrompt, getRandomSuggestion, analyzePromptAdvanced, analysisToAdvancedParams, popularSrefCodes, curatedPrompts, curatedPromptCategories, getPromptsByCategory, searchCuratedPrompts, getRandomCuratedPrompts, type PromptCategory } from "@/lib/api";
 
 // Highlight colors for different prompt parts
 const highlightColors = {
@@ -64,8 +65,12 @@ export default function Home() {
   // Explore State
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<LexicaImage[]>([]);
+  const [civitaiResults, setCivitaiResults] = useState<CivitaiImage[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [importedIds, setImportedIds] = useState<Set<string>>(new Set());
+  const [searchSource, setSearchSource] = useState<SearchSource>('curated');
+  const [selectedCategory, setSelectedCategory] = useState<PromptCategory | 'all'>('all');
+  const [displayedCuratedPrompts, setDisplayedCuratedPrompts] = useState<CuratedPrompt[]>([]);
 
   // History State
   const [savedPrompts, setSavedPrompts] = useState<SavedPrompt[]>([]);
@@ -152,6 +157,15 @@ export default function Home() {
   useEffect(() => {
     loadData();
   }, []);
+
+  // Initialize curated prompts
+  useEffect(() => {
+    if (selectedCategory === 'all') {
+      setDisplayedCuratedPrompts(curatedPrompts);
+    } else {
+      setDisplayedCuratedPrompts(getPromptsByCategory(selectedCategory));
+    }
+  }, [selectedCategory]);
 
   const loadData = useCallback(() => {
     setSavedPrompts(storage.getAllPrompts());
@@ -312,17 +326,61 @@ export default function Home() {
 
   // Search external prompts
   const handleSearch = async () => {
-    if (!searchQuery.trim()) return;
+    if (!searchQuery.trim() && searchSource !== 'curated') return;
 
     setIsSearching(true);
     try {
-      const results = await searchLexicaPrompts(searchQuery);
-      setSearchResults(results);
+      if (searchSource === 'curated') {
+        const results = searchCuratedPrompts(searchQuery);
+        setDisplayedCuratedPrompts(results);
+      } else if (searchSource === 'lexica') {
+        const results = await searchLexicaPrompts(searchQuery);
+        setSearchResults(results);
+      } else if (searchSource === 'civitai') {
+        const results = await searchCivitaiImages(searchQuery);
+        setCivitaiResults(results);
+      }
     } catch {
       toast.error(t('toast.searchError'));
     } finally {
       setIsSearching(false);
     }
+  };
+
+  // Apply curated prompt settings
+  const handleApplyCuratedPrompt = (prompt: CuratedPrompt) => {
+    setIdea(prompt.prompt);
+    if (prompt.aspectRatio) {
+      setAspectRatio(prompt.aspectRatio);
+    }
+    if (prompt.version) {
+      setVersion(prompt.version);
+    }
+    if (prompt.suggestedParams) {
+      setAdvanced(prev => ({
+        ...prev,
+        stylize: prompt.suggestedParams.stylize ?? prev.stylize,
+        chaos: prompt.suggestedParams.chaos ?? prev.chaos,
+        weird: prompt.suggestedParams.weird ?? prev.weird,
+        quality: prompt.suggestedParams.quality ?? prev.quality,
+      }));
+      setShowAdvanced(true);
+    }
+    setActiveTab("create");
+    toast.success(t('toast.templateApplied'));
+  };
+
+  // Import Civitai prompt
+  const handleImportCivitaiPrompt = (image: CivitaiImage) => {
+    const formattedPrompt = formatLexicaPromptForMidjourney(image.prompt, aspectRatio, version);
+    savePrompt(formattedPrompt, image.prompt.substring(0, 50), 'external', image.url, 'Civitai');
+    setImportedIds(prev => new Set(prev).add(image.id));
+    toast.success(t('toast.promptImported'));
+  };
+
+  // Refresh random curated prompts
+  const handleRefreshCurated = () => {
+    setDisplayedCuratedPrompts(getRandomCuratedPrompts(8));
   };
 
   // Import external prompt
@@ -1162,10 +1220,70 @@ export default function Home() {
                   {t('explore.title')}
                 </CardTitle>
                 <CardDescription>
-                  {t('explore.description')}
+                  {searchSource === 'curated' ? t('explore.curatedDesc') :
+                   searchSource === 'lexica' ? t('explore.lexicaDesc') :
+                   t('explore.civitaiDesc')}
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
+                {/* Source Selection */}
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    variant={searchSource === 'curated' ? 'default' : 'outline'}
+                    size="sm"
+                    onClick={() => setSearchSource('curated')}
+                    className={searchSource === 'curated' ? 'bg-gradient-to-r from-purple-600 to-pink-600' : ''}
+                  >
+                    <Library className="w-4 h-4 mr-1" />
+                    {t('explore.sourceCurated')}
+                  </Button>
+                  <Button
+                    variant={searchSource === 'lexica' ? 'default' : 'outline'}
+                    size="sm"
+                    onClick={() => setSearchSource('lexica')}
+                    className={searchSource === 'lexica' ? 'bg-gradient-to-r from-blue-600 to-cyan-600' : ''}
+                  >
+                    <Layers className="w-4 h-4 mr-1" />
+                    {t('explore.sourceLexica')}
+                  </Button>
+                  <Button
+                    variant={searchSource === 'civitai' ? 'default' : 'outline'}
+                    size="sm"
+                    onClick={() => setSearchSource('civitai')}
+                    className={searchSource === 'civitai' ? 'bg-gradient-to-r from-green-600 to-teal-600' : ''}
+                  >
+                    <ImageIcon className="w-4 h-4 mr-1" />
+                    {t('explore.sourceCivitai')}
+                  </Button>
+                </div>
+
+                {/* Category Selection (for curated only) */}
+                {searchSource === 'curated' && (
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium">{t('explore.category')}</Label>
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        variant={selectedCategory === 'all' ? 'secondary' : 'ghost'}
+                        size="sm"
+                        onClick={() => setSelectedCategory('all')}
+                      >
+                        {t('explore.categoryAll')}
+                      </Button>
+                      {curatedPromptCategories.map((cat) => (
+                        <Button
+                          key={cat}
+                          variant={selectedCategory === cat ? 'secondary' : 'ghost'}
+                          size="sm"
+                          onClick={() => setSelectedCategory(cat)}
+                        >
+                          {t(`explore.category${cat.charAt(0).toUpperCase() + cat.slice(1)}`)}
+                        </Button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Search Input */}
                 <div className="flex gap-2">
                   <Input
                     placeholder={t('explore.searchPlaceholder')}
@@ -1191,35 +1309,66 @@ export default function Home() {
                       </>
                     )}
                   </Button>
+                  {searchSource === 'curated' && (
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button variant="outline" size="icon" onClick={handleRefreshCurated}>
+                          <RefreshCw className="w-4 h-4" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>{t('explore.showRandom')}</TooltipContent>
+                    </Tooltip>
+                  )}
                 </div>
 
-                <p className="text-xs text-muted-foreground">
-                  {t('explore.poweredBy')}
-                </p>
+                {/* Results Count */}
+                {searchSource === 'curated' && displayedCuratedPrompts.length > 0 && (
+                  <p className="text-xs text-muted-foreground">
+                    {displayedCuratedPrompts.length} {t('explore.totalPrompts')}
+                  </p>
+                )}
 
-                {searchResults.length > 0 ? (
+                {/* Curated Results */}
+                {searchSource === 'curated' && (
                   <ScrollArea className="h-[600px]">
-                    <div className="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 pr-4">
-                      {searchResults.map((image) => (
-                        <Card key={image.id} className="overflow-hidden hover:shadow-lg transition-shadow">
-                          <div className="aspect-square overflow-hidden bg-muted">
-                            <img
-                              src={image.srcSmall}
-                              alt={image.prompt.substring(0, 50)}
-                              className="w-full h-full object-cover hover:scale-105 transition-transform"
-                              loading="lazy"
-                            />
-                          </div>
-                          <CardContent className="p-3">
-                            <p className="text-xs text-muted-foreground line-clamp-3 mb-3 font-mono">
-                              {image.prompt}
+                    <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 pr-4">
+                      {displayedCuratedPrompts.map((prompt) => (
+                        <Card key={prompt.id} className="overflow-hidden hover:shadow-lg transition-shadow">
+                          <CardContent className="p-4">
+                            <div className="flex items-start justify-between mb-2">
+                              <div>
+                                <h4 className="font-medium text-sm">{prompt.title}</h4>
+                                <Badge variant="outline" className="text-xs mt-1">
+                                  <Tag className="w-3 h-3 mr-1" />
+                                  {t(`explore.category${prompt.category.charAt(0).toUpperCase() + prompt.category.slice(1)}`)}
+                                </Badge>
+                              </div>
+                            </div>
+                            <p className="text-xs text-muted-foreground line-clamp-4 mb-3 font-mono">
+                              {prompt.prompt}
                             </p>
+                            <div className="flex flex-wrap gap-1 mb-3">
+                              {prompt.tags.slice(0, 4).map((tag) => (
+                                <Badge key={tag} variant="secondary" className="text-xs">
+                                  {tag}
+                                </Badge>
+                              ))}
+                            </div>
+                            {prompt.suggestedParams && (
+                              <div className="text-xs text-muted-foreground mb-3 p-2 bg-muted/50 rounded">
+                                <span className="font-medium">{t('explore.suggestedParams')}: </span>
+                                {prompt.suggestedParams.stylize && `--s ${prompt.suggestedParams.stylize} `}
+                                {prompt.suggestedParams.chaos && `--c ${prompt.suggestedParams.chaos} `}
+                                {prompt.suggestedParams.weird && `--weird ${prompt.suggestedParams.weird} `}
+                                {prompt.aspectRatio && `--ar ${prompt.aspectRatio}`}
+                              </div>
+                            )}
                             <div className="flex gap-2">
                               <Button
                                 size="sm"
                                 variant="outline"
                                 className="flex-1"
-                                onClick={() => copyToClipboard(formatLexicaPromptForMidjourney(image.prompt, aspectRatio, version))}
+                                onClick={() => copyToClipboard(`/imagine prompt: ${prompt.prompt} --ar ${prompt.aspectRatio || '1:1'} --v ${prompt.version || '6'}`)}
                               >
                                 <Copy className="w-3 h-3 mr-1" />
                                 {t('output.copy')}
@@ -1227,20 +1376,10 @@ export default function Home() {
                               <Button
                                 size="sm"
                                 className="flex-1"
-                                onClick={() => handleImportPrompt(image)}
-                                disabled={importedIds.has(image.id)}
+                                onClick={() => handleApplyCuratedPrompt(prompt)}
                               >
-                                {importedIds.has(image.id) ? (
-                                  <>
-                                    <Check className="w-3 h-3 mr-1" />
-                                    {t('explore.imported')}
-                                  </>
-                                ) : (
-                                  <>
-                                    <Download className="w-3 h-3 mr-1" />
-                                    {t('explore.import')}
-                                  </>
-                                )}
+                                <Wand2 className="w-3 h-3 mr-1" />
+                                {t('explore.useCurated')}
                               </Button>
                             </div>
                           </CardContent>
@@ -1248,20 +1387,160 @@ export default function Home() {
                       ))}
                     </div>
                   </ScrollArea>
-                ) : (
-                  <div className="flex flex-col items-center justify-center py-16 text-center text-muted-foreground">
-                    <Search className="w-12 h-12 mb-4 opacity-20" />
-                    <p>{t('explore.noResults')}</p>
-                    <p className="text-sm mt-2">{t('explore.searchHint')}</p>
-                    <p className="text-xs mt-4">
-                      Try: <span
-                        className="text-primary cursor-pointer hover:underline"
-                        onClick={() => setSearchQuery(getRandomSuggestion())}
-                      >
-                        {getRandomSuggestion()}
-                      </span>
-                    </p>
-                  </div>
+                )}
+
+                {/* Lexica Results */}
+                {searchSource === 'lexica' && (
+                  <>
+                    {searchResults.length > 0 ? (
+                      <ScrollArea className="h-[600px]">
+                        <div className="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 pr-4">
+                          {searchResults.map((image) => (
+                            <Card key={image.id} className="overflow-hidden hover:shadow-lg transition-shadow">
+                              <div className="aspect-square overflow-hidden bg-muted">
+                                <img
+                                  src={image.srcSmall}
+                                  alt={image.prompt.substring(0, 50)}
+                                  className="w-full h-full object-cover hover:scale-105 transition-transform"
+                                  loading="lazy"
+                                />
+                              </div>
+                              <CardContent className="p-3">
+                                <p className="text-xs text-muted-foreground line-clamp-3 mb-3 font-mono">
+                                  {image.prompt}
+                                </p>
+                                <div className="flex gap-2">
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="flex-1"
+                                    onClick={() => copyToClipboard(formatLexicaPromptForMidjourney(image.prompt, aspectRatio, version))}
+                                  >
+                                    <Copy className="w-3 h-3 mr-1" />
+                                    {t('output.copy')}
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    className="flex-1"
+                                    onClick={() => handleImportPrompt(image)}
+                                    disabled={importedIds.has(image.id)}
+                                  >
+                                    {importedIds.has(image.id) ? (
+                                      <>
+                                        <Check className="w-3 h-3 mr-1" />
+                                        {t('explore.imported')}
+                                      </>
+                                    ) : (
+                                      <>
+                                        <Download className="w-3 h-3 mr-1" />
+                                        {t('explore.import')}
+                                      </>
+                                    )}
+                                  </Button>
+                                </div>
+                              </CardContent>
+                            </Card>
+                          ))}
+                        </div>
+                      </ScrollArea>
+                    ) : (
+                      <div className="flex flex-col items-center justify-center py-16 text-center text-muted-foreground">
+                        <Search className="w-12 h-12 mb-4 opacity-20" />
+                        <p>{t('explore.noResults')}</p>
+                        <p className="text-sm mt-2">{t('explore.searchHint')}</p>
+                        <p className="text-xs mt-4">
+                          Try: <span
+                            className="text-primary cursor-pointer hover:underline"
+                            onClick={() => setSearchQuery(getRandomSuggestion())}
+                          >
+                            {getRandomSuggestion()}
+                          </span>
+                        </p>
+                      </div>
+                    )}
+                  </>
+                )}
+
+                {/* Civitai Results */}
+                {searchSource === 'civitai' && (
+                  <>
+                    {civitaiResults.length > 0 ? (
+                      <ScrollArea className="h-[600px]">
+                        <div className="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 pr-4">
+                          {civitaiResults.map((image) => (
+                            <Card key={image.id} className="overflow-hidden hover:shadow-lg transition-shadow">
+                              <div className="aspect-square overflow-hidden bg-muted">
+                                <img
+                                  src={image.url}
+                                  alt={image.prompt.substring(0, 50)}
+                                  className="w-full h-full object-cover hover:scale-105 transition-transform"
+                                  loading="lazy"
+                                />
+                              </div>
+                              <CardContent className="p-3">
+                                <div className="flex items-center gap-1 mb-2">
+                                  <Badge variant="outline" className="text-xs">
+                                    {image.model}
+                                  </Badge>
+                                </div>
+                                <p className="text-xs text-muted-foreground line-clamp-3 mb-3 font-mono">
+                                  {image.prompt}
+                                </p>
+                                {image.negativePrompt && (
+                                  <p className="text-xs text-red-500/70 line-clamp-1 mb-2 font-mono">
+                                    --no {image.negativePrompt.substring(0, 50)}...
+                                  </p>
+                                )}
+                                <div className="flex gap-2">
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="flex-1"
+                                    onClick={() => copyToClipboard(formatLexicaPromptForMidjourney(image.prompt, aspectRatio, version))}
+                                  >
+                                    <Copy className="w-3 h-3 mr-1" />
+                                    {t('output.copy')}
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    className="flex-1"
+                                    onClick={() => handleImportCivitaiPrompt(image)}
+                                    disabled={importedIds.has(image.id)}
+                                  >
+                                    {importedIds.has(image.id) ? (
+                                      <>
+                                        <Check className="w-3 h-3 mr-1" />
+                                        {t('explore.imported')}
+                                      </>
+                                    ) : (
+                                      <>
+                                        <Download className="w-3 h-3 mr-1" />
+                                        {t('explore.import')}
+                                      </>
+                                    )}
+                                  </Button>
+                                </div>
+                              </CardContent>
+                            </Card>
+                          ))}
+                        </div>
+                      </ScrollArea>
+                    ) : (
+                      <div className="flex flex-col items-center justify-center py-16 text-center text-muted-foreground">
+                        <Search className="w-12 h-12 mb-4 opacity-20" />
+                        <p>{t('explore.noResults')}</p>
+                        <p className="text-sm mt-2">{t('explore.searchHint')}</p>
+                        <p className="text-xs mt-4">
+                          Try: <span
+                            className="text-primary cursor-pointer hover:underline"
+                            onClick={() => setSearchQuery(getRandomSuggestion())}
+                          >
+                            {getRandomSuggestion()}
+                          </span>
+                        </p>
+                      </div>
+                    )}
+                  </>
                 )}
               </CardContent>
             </Card>

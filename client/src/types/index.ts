@@ -66,3 +66,39 @@ export interface FilterOptions {
   favoritesOnly: boolean;
   sortBy: 'newest' | 'oldest' | 'alphabetical';
 }
+
+// Advanced Parameters Types
+export interface AdvancedParams {
+  stylize: number | null;      // 0-1000, default 100
+  chaos: number | null;        // 0-100, default 0
+  weird: number | null;        // 0-3000, default 0
+  quality: number | null;      // 0.25, 0.5, 1
+  seed: number | null;         // any number
+  stop: number | null;         // 10-100
+  tile: boolean;               // true/false
+  negativePrompt: string;      // --no items
+  sref: string;                // style reference code or "random"
+  srefWeight: number | null;   // 0-1000, style weight
+}
+
+// Template Types
+export interface PromptTemplate {
+  id: string;
+  name: string;
+  style: string;
+  mood: string;
+  aspectRatio: string;
+  version: string;
+  advanced: AdvancedParams;
+  createdAt: Date;
+}
+
+// Prompt Analysis Types
+export interface PromptAnalysis {
+  subject: string;
+  styles: string[];
+  moods: string[];
+  parameters: Record<string, string>;
+  modifiers: string[];
+  negatives: string[];
+}

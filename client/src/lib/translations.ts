@@ -161,6 +161,63 @@ const translations: Record<Language, Translations> = {
     'toast.groupDeleted': '그룹이 삭제되었습니다!',
     'toast.enterIdea': '먼저 아이디어를 입력하세요',
     'toast.searchError': '검색 중 오류가 발생했습니다',
+    'toast.templateSaved': '템플릿이 저장되었습니다!',
+    'toast.templateDeleted': '템플릿이 삭제되었습니다!',
+    'toast.templateApplied': '템플릿이 적용되었습니다!',
+
+    // Advanced Parameters
+    'advanced.title': '고급 파라미터',
+    'advanced.toggle': '고급 옵션',
+    'advanced.stylize': '스타일화 (--s)',
+    'advanced.stylizeDesc': '0-1000. 높을수록 예술적, 낮을수록 프롬프트에 충실',
+    'advanced.chaos': '카오스 (--c)',
+    'advanced.chaosDesc': '0-100. 높을수록 다양한 결과',
+    'advanced.weird': '위어드 (--weird)',
+    'advanced.weirdDesc': '0-3000. 독특하고 기이한 결과',
+    'advanced.quality': '퀄리티 (--q)',
+    'advanced.qualityDesc': '렌더링 품질 (0.25, 0.5, 1)',
+    'advanced.seed': '시드 (--seed)',
+    'advanced.seedDesc': '동일한 시드로 유사한 결과 재현',
+    'advanced.tile': '타일 (--tile)',
+    'advanced.tileDesc': '반복 가능한 패턴 생성',
+    'advanced.stop': '스톱 (--stop)',
+    'advanced.stopDesc': '10-100. 일찍 멈춰 미완성 느낌',
+
+    // Negative Prompt
+    'negative.title': '네거티브 프롬프트',
+    'negative.placeholder': '제외할 요소 (예: text, watermark, blur)',
+    'negative.hint': '콤마로 구분하여 여러 요소 제외',
+
+    // SREF (Style Reference)
+    'sref.title': '스타일 레퍼런스 (SREF)',
+    'sref.code': 'SREF 코드',
+    'sref.codePlaceholder': '예: 12345678 또는 random',
+    'sref.weight': '스타일 가중치 (--sw)',
+    'sref.weightDesc': '0-1000. 스타일 영향도',
+    'sref.hint': '숫자 코드 또는 "random" 입력',
+
+    // Templates
+    'template.title': '프롬프트 템플릿',
+    'template.save': '현재 설정을 템플릿으로 저장',
+    'template.name': '템플릿 이름',
+    'template.namePlaceholder': '예: 내 판타지 스타일',
+    'template.empty': '저장된 템플릿이 없습니다',
+    'template.emptyHint': '현재 설정을 템플릿으로 저장하세요',
+    'template.apply': '적용',
+    'template.delete': '삭제',
+
+    // Prompt Analyzer
+    'analyzer.title': '프롬프트 분석기',
+    'analyzer.input': '분석할 프롬프트 입력',
+    'analyzer.inputPlaceholder': '미드저니 프롬프트를 붙여넣기...',
+    'analyzer.analyze': '분석',
+    'analyzer.result': '분석 결과',
+    'analyzer.subject': '주제',
+    'analyzer.styles': '스타일',
+    'analyzer.moods': '분위기',
+    'analyzer.params': '파라미터',
+    'analyzer.modifiers': '수식어',
+    'analyzer.useThis': '이 설정 사용',
   },
   en: {
     // Header
@@ -322,6 +379,63 @@ const translations: Record<Language, Translations> = {
     'toast.groupDeleted': 'Group deleted!',
     'toast.enterIdea': 'Please enter your idea first',
     'toast.searchError': 'Error searching prompts',
+    'toast.templateSaved': 'Template saved!',
+    'toast.templateDeleted': 'Template deleted!',
+    'toast.templateApplied': 'Template applied!',
+
+    // Advanced Parameters
+    'advanced.title': 'Advanced Parameters',
+    'advanced.toggle': 'Advanced Options',
+    'advanced.stylize': 'Stylize (--s)',
+    'advanced.stylizeDesc': '0-1000. Higher = more artistic, Lower = more literal',
+    'advanced.chaos': 'Chaos (--c)',
+    'advanced.chaosDesc': '0-100. Higher = more varied results',
+    'advanced.weird': 'Weird (--weird)',
+    'advanced.weirdDesc': '0-3000. Unique and quirky results',
+    'advanced.quality': 'Quality (--q)',
+    'advanced.qualityDesc': 'Rendering quality (0.25, 0.5, 1)',
+    'advanced.seed': 'Seed (--seed)',
+    'advanced.seedDesc': 'Same seed produces similar results',
+    'advanced.tile': 'Tile (--tile)',
+    'advanced.tileDesc': 'Create seamless patterns',
+    'advanced.stop': 'Stop (--stop)',
+    'advanced.stopDesc': '10-100. Stop early for unfinished look',
+
+    // Negative Prompt
+    'negative.title': 'Negative Prompt',
+    'negative.placeholder': 'Elements to exclude (e.g., text, watermark, blur)',
+    'negative.hint': 'Separate multiple items with commas',
+
+    // SREF (Style Reference)
+    'sref.title': 'Style Reference (SREF)',
+    'sref.code': 'SREF Code',
+    'sref.codePlaceholder': 'e.g., 12345678 or random',
+    'sref.weight': 'Style Weight (--sw)',
+    'sref.weightDesc': '0-1000. Style influence strength',
+    'sref.hint': 'Enter numeric code or "random"',
+
+    // Templates
+    'template.title': 'Prompt Templates',
+    'template.save': 'Save current settings as template',
+    'template.name': 'Template Name',
+    'template.namePlaceholder': 'e.g., My Fantasy Style',
+    'template.empty': 'No saved templates',
+    'template.emptyHint': 'Save your current settings as a template',
+    'template.apply': 'Apply',
+    'template.delete': 'Delete',
+
+    // Prompt Analyzer
+    'analyzer.title': 'Prompt Analyzer',
+    'analyzer.input': 'Enter prompt to analyze',
+    'analyzer.inputPlaceholder': 'Paste a Midjourney prompt...',
+    'analyzer.analyze': 'Analyze',
+    'analyzer.result': 'Analysis Result',
+    'analyzer.subject': 'Subject',
+    'analyzer.styles': 'Styles',
+    'analyzer.moods': 'Moods',
+    'analyzer.params': 'Parameters',
+    'analyzer.modifiers': 'Modifiers',
+    'analyzer.useThis': 'Use these settings',
   }
 };
 

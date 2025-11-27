@@ -10,18 +10,22 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { Switch } from "@/components/ui/switch";
+import { Slider } from "@/components/ui/slider";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import {
   Sparkles, Copy, Check, Wand2, Image as ImageIcon, Info, Search,
   Heart, Folder, Plus, Trash2, Edit3, MoreVertical, Globe,
   History, Star, FolderOpen, Download, ChevronDown, ExternalLink,
-  Highlighter, Eye, EyeOff
+  Eye, EyeOff, Settings2, Save, Zap, Shuffle, FileText, Scan
 } from "lucide-react";
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { toast } from "sonner";
 import { useLanguage } from "@/contexts/LanguageContext";
-import type { SavedPrompt, PromptGroup, LexicaImage, FilterOptions } from "@/types";
+import type { SavedPrompt, PromptGroup, LexicaImage, FilterOptions, AdvancedParams, PromptTemplate, PromptAnalysis } from "@/types";
 import * as storage from "@/lib/storage";
-import { searchLexicaPrompts, formatLexicaPromptForMidjourney, parsePrompt, getRandomSuggestion } from "@/lib/api";
+import { searchLexicaPrompts, formatLexicaPromptForMidjourney, parsePrompt, getRandomSuggestion, analyzePromptAdvanced, analysisToAdvancedParams, popularSrefCodes } from "@/lib/api";
 
 // Highlight colors for different prompt parts
 const highlightColors = {
@@ -53,6 +57,10 @@ export default function Home() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [saved, setSaved] = useState(false);
 
+  // Advanced Parameters State
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [advanced, setAdvanced] = useState<AdvancedParams>(storage.getDefaultAdvancedParams());
+
   // Explore State
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<LexicaImage[]>([]);
@@ -69,10 +77,18 @@ export default function Home() {
     sortBy: 'newest',
   });
 
+  // Template State
+  const [templates, setTemplates] = useState<PromptTemplate[]>([]);
+  const [newTemplateName, setNewTemplateName] = useState("");
+  const [isTemplateDialogOpen, setIsTemplateDialogOpen] = useState(false);
+
+  // Analyzer State
+  const [analyzerInput, setAnalyzerInput] = useState("");
+  const [analysisResult, setAnalysisResult] = useState<PromptAnalysis | null>(null);
+
   // UI State
   const [activeTab, setActiveTab] = useState("create");
   const [showHighlight, setShowHighlight] = useState(false);
-  const [editingPrompt, setEditingPrompt] = useState<SavedPrompt | null>(null);
   const [newGroupName, setNewGroupName] = useState("");
   const [newGroupColor, setNewGroupColor] = useState(groupColors[0]);
   const [isGroupDialogOpen, setIsGroupDialogOpen] = useState(false);
@@ -119,10 +135,17 @@ export default function Home() {
   ];
 
   const versions = [
-    { label: "V6 (Latest)", value: "6" },
+    { label: "V7 (Latest)", value: "7" },
+    { label: "V6.1", value: "6.1" },
+    { label: "V6", value: "6" },
     { label: "V5.2", value: "5.2" },
-    { label: "V5.1", value: "5.1" },
     { label: "Niji 6", value: "niji 6" },
+  ];
+
+  const qualityOptions = [
+    { label: "0.25 (Draft)", value: "0.25" },
+    { label: "0.5 (Low)", value: "0.5" },
+    { label: "1 (Standard)", value: "1" },
   ];
 
   // Load data on mount
@@ -133,6 +156,7 @@ export default function Home() {
   const loadData = useCallback(() => {
     setSavedPrompts(storage.getAllPrompts());
     setGroups(storage.getAllGroups());
+    setTemplates(storage.getAllTemplates());
   }, []);
 
   // Filter prompts based on current options
@@ -167,12 +191,45 @@ export default function Home() {
 
       prompt += ", highly detailed, professional quality, 8k resolution";
 
+      // Add basic parameters
       if (aspectRatio !== "1:1") {
         prompt += ` --ar ${aspectRatio}`;
       }
 
       if (version) {
         prompt += ` --v ${version}`;
+      }
+
+      // Add advanced parameters
+      if (advanced.stylize !== null) {
+        prompt += ` --s ${advanced.stylize}`;
+      }
+      if (advanced.chaos !== null) {
+        prompt += ` --c ${advanced.chaos}`;
+      }
+      if (advanced.weird !== null) {
+        prompt += ` --weird ${advanced.weird}`;
+      }
+      if (advanced.quality !== null) {
+        prompt += ` --q ${advanced.quality}`;
+      }
+      if (advanced.seed !== null) {
+        prompt += ` --seed ${advanced.seed}`;
+      }
+      if (advanced.stop !== null) {
+        prompt += ` --stop ${advanced.stop}`;
+      }
+      if (advanced.tile) {
+        prompt += ` --tile`;
+      }
+      if (advanced.sref) {
+        prompt += ` --sref ${advanced.sref}`;
+        if (advanced.srefWeight !== null) {
+          prompt += ` --sw ${advanced.srefWeight}`;
+        }
+      }
+      if (advanced.negativePrompt) {
+        prompt += ` --no ${advanced.negativePrompt}`;
       }
 
       setGeneratedPrompt(prompt);
@@ -276,6 +333,71 @@ export default function Home() {
     toast.success(t('toast.promptImported'));
   };
 
+  // Template functions
+  const handleSaveTemplate = () => {
+    if (!newTemplateName.trim()) return;
+
+    storage.saveTemplate({
+      name: newTemplateName.trim(),
+      style,
+      mood,
+      aspectRatio,
+      version,
+      advanced,
+    });
+
+    loadData();
+    setNewTemplateName("");
+    setIsTemplateDialogOpen(false);
+    toast.success(t('toast.templateSaved'));
+  };
+
+  const handleApplyTemplate = (template: PromptTemplate) => {
+    setStyle(template.style);
+    setMood(template.mood);
+    setAspectRatio(template.aspectRatio);
+    setVersion(template.version);
+    setAdvanced(template.advanced);
+    toast.success(t('toast.templateApplied'));
+  };
+
+  const handleDeleteTemplate = (id: string) => {
+    storage.deleteTemplate(id);
+    loadData();
+    toast.success(t('toast.templateDeleted'));
+  };
+
+  // Analyzer function
+  const handleAnalyze = () => {
+    if (!analyzerInput.trim()) return;
+    const result = analyzePromptAdvanced(analyzerInput);
+    setAnalysisResult(result);
+  };
+
+  const handleUseAnalysis = () => {
+    if (!analysisResult) return;
+
+    // Apply analysis to current settings
+    if (analysisResult.parameters.ar) {
+      setAspectRatio(analysisResult.parameters.ar);
+    }
+    if (analysisResult.parameters.v) {
+      setVersion(analysisResult.parameters.v);
+    }
+
+    const advParams = analysisToAdvancedParams(analysisResult);
+    setAdvanced(prev => ({ ...prev, ...advParams }));
+
+    // Extract subject as idea
+    if (analysisResult.subject) {
+      setIdea(analysisResult.subject);
+    }
+
+    setShowAdvanced(true);
+    setActiveTab("create");
+    toast.success(t('toast.templateApplied'));
+  };
+
   // Render highlighted prompt
   const renderHighlightedPrompt = (prompt: string) => {
     if (!showHighlight) {
@@ -285,19 +407,14 @@ export default function Home() {
     const parsed = parsePrompt(prompt);
     const parts: { text: string; type: keyof typeof highlightColors }[] = [];
 
-    // Remove /imagine prompt: prefix for highlighting
     let workingPrompt = prompt.replace(/^\/imagine prompt:\s*/i, '');
-
-    // Extract parameters first
     const paramMatches = workingPrompt.match(/--\w+\s+[^\s-]+/g) || [];
     paramMatches.forEach(param => {
       workingPrompt = workingPrompt.replace(param, '');
     });
 
-    // Split remaining prompt by commas
     const segments = workingPrompt.split(',').map(s => s.trim()).filter(Boolean);
 
-    // Add /imagine prompt: prefix
     parts.push({ text: '/imagine prompt: ', type: 'normal' });
 
     segments.forEach((segment, index) => {
@@ -318,7 +435,6 @@ export default function Home() {
       }
     });
 
-    // Add parameters at the end
     if (paramMatches.length > 0) {
       parts.push({ text: ' ', type: 'normal' });
       paramMatches.forEach((param, index) => {
@@ -402,7 +518,10 @@ export default function Home() {
                     <Copy className="w-4 h-4 mr-2" />
                     {t('output.copy')}
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setGeneratedPrompt(prompt.prompt)}>
+                  <DropdownMenuItem onClick={() => {
+                    setGeneratedPrompt(prompt.prompt);
+                    setActiveTab("create");
+                  }}>
                     <Edit3 className="w-4 h-4 mr-2" />
                     {t('history.edit')}
                   </DropdownMenuItem>
@@ -487,7 +606,6 @@ export default function Home() {
               </div>
             </div>
             <div className="flex items-center gap-2">
-              {/* Language Switcher */}
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button variant="outline" size="sm" className="gap-1">
@@ -520,7 +638,7 @@ export default function Home() {
       {/* Main Content */}
       <main className="container py-8">
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList className="grid w-full grid-cols-4 lg:w-auto lg:inline-flex">
+          <TabsList className="grid w-full grid-cols-5 lg:w-auto lg:inline-flex">
             <TabsTrigger value="create" className="gap-1">
               <Wand2 className="w-4 h-4" />
               <span className="hidden sm:inline">{t('nav.create')}</span>
@@ -528,6 +646,10 @@ export default function Home() {
             <TabsTrigger value="explore" className="gap-1">
               <Search className="w-4 h-4" />
               <span className="hidden sm:inline">{t('nav.explore')}</span>
+            </TabsTrigger>
+            <TabsTrigger value="analyzer" className="gap-1">
+              <Scan className="w-4 h-4" />
+              <span className="hidden sm:inline">{t('analyzer.title')}</span>
             </TabsTrigger>
             <TabsTrigger value="history" className="gap-1">
               <History className="w-4 h-4" />
@@ -647,6 +769,188 @@ export default function Home() {
                       </div>
                     </div>
 
+                    {/* Advanced Parameters Collapsible */}
+                    <Collapsible open={showAdvanced} onOpenChange={setShowAdvanced}>
+                      <CollapsibleTrigger asChild>
+                        <Button variant="outline" className="w-full justify-between">
+                          <span className="flex items-center gap-2">
+                            <Settings2 className="w-4 h-4" />
+                            {t('advanced.toggle')}
+                          </span>
+                          <ChevronDown className={`w-4 h-4 transition-transform ${showAdvanced ? 'rotate-180' : ''}`} />
+                        </Button>
+                      </CollapsibleTrigger>
+                      <CollapsibleContent className="space-y-4 pt-4">
+                        {/* Stylize */}
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between">
+                            <Label>{t('advanced.stylize')}</Label>
+                            <span className="text-xs text-muted-foreground">{advanced.stylize ?? 100}</span>
+                          </div>
+                          <Slider
+                            value={[advanced.stylize ?? 100]}
+                            onValueChange={([v]) => setAdvanced(prev => ({ ...prev, stylize: v }))}
+                            min={0}
+                            max={1000}
+                            step={10}
+                          />
+                          <p className="text-xs text-muted-foreground">{t('advanced.stylizeDesc')}</p>
+                        </div>
+
+                        {/* Chaos */}
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between">
+                            <Label>{t('advanced.chaos')}</Label>
+                            <span className="text-xs text-muted-foreground">{advanced.chaos ?? 0}</span>
+                          </div>
+                          <Slider
+                            value={[advanced.chaos ?? 0]}
+                            onValueChange={([v]) => setAdvanced(prev => ({ ...prev, chaos: v }))}
+                            min={0}
+                            max={100}
+                            step={5}
+                          />
+                          <p className="text-xs text-muted-foreground">{t('advanced.chaosDesc')}</p>
+                        </div>
+
+                        {/* Weird */}
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between">
+                            <Label>{t('advanced.weird')}</Label>
+                            <span className="text-xs text-muted-foreground">{advanced.weird ?? 0}</span>
+                          </div>
+                          <Slider
+                            value={[advanced.weird ?? 0]}
+                            onValueChange={([v]) => setAdvanced(prev => ({ ...prev, weird: v }))}
+                            min={0}
+                            max={3000}
+                            step={100}
+                          />
+                          <p className="text-xs text-muted-foreground">{t('advanced.weirdDesc')}</p>
+                        </div>
+
+                        {/* Quality */}
+                        <div className="space-y-2">
+                          <Label>{t('advanced.quality')}</Label>
+                          <Select
+                            value={advanced.quality?.toString() || "1"}
+                            onValueChange={(v) => setAdvanced(prev => ({ ...prev, quality: parseFloat(v) }))}
+                          >
+                            <SelectTrigger>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {qualityOptions.map((q) => (
+                                <SelectItem key={q.value} value={q.value}>
+                                  {q.label}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+
+                        {/* Seed */}
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between">
+                            <Label>{t('advanced.seed')}</Label>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => setAdvanced(prev => ({ ...prev, seed: Math.floor(Math.random() * 4294967295) }))}
+                            >
+                              <Shuffle className="w-3 h-3 mr-1" />
+                              Random
+                            </Button>
+                          </div>
+                          <Input
+                            type="number"
+                            placeholder="Enter seed number"
+                            value={advanced.seed ?? ''}
+                            onChange={(e) => setAdvanced(prev => ({ ...prev, seed: e.target.value ? parseInt(e.target.value) : null }))}
+                          />
+                        </div>
+
+                        {/* Tile */}
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <Label>{t('advanced.tile')}</Label>
+                            <p className="text-xs text-muted-foreground">{t('advanced.tileDesc')}</p>
+                          </div>
+                          <Switch
+                            checked={advanced.tile}
+                            onCheckedChange={(v) => setAdvanced(prev => ({ ...prev, tile: v }))}
+                          />
+                        </div>
+
+                        {/* SREF */}
+                        <div className="space-y-2">
+                          <Label>{t('sref.title')}</Label>
+                          <div className="flex gap-2">
+                            <Input
+                              placeholder={t('sref.codePlaceholder')}
+                              value={advanced.sref}
+                              onChange={(e) => setAdvanced(prev => ({ ...prev, sref: e.target.value }))}
+                              className="flex-1"
+                            />
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button variant="outline" size="icon">
+                                  <Zap className="w-4 h-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                {popularSrefCodes.map((sref) => (
+                                  <DropdownMenuItem
+                                    key={sref.code}
+                                    onClick={() => setAdvanced(prev => ({ ...prev, sref: sref.code }))}
+                                  >
+                                    <span className="font-mono">{sref.code}</span>
+                                    <span className="ml-2 text-muted-foreground">- {sref.description}</span>
+                                  </DropdownMenuItem>
+                                ))}
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </div>
+                          {advanced.sref && (
+                            <div className="space-y-2">
+                              <div className="flex items-center justify-between">
+                                <Label className="text-xs">{t('sref.weight')}</Label>
+                                <span className="text-xs text-muted-foreground">{advanced.srefWeight ?? 100}</span>
+                              </div>
+                              <Slider
+                                value={[advanced.srefWeight ?? 100]}
+                                onValueChange={([v]) => setAdvanced(prev => ({ ...prev, srefWeight: v }))}
+                                min={0}
+                                max={1000}
+                                step={10}
+                              />
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Negative Prompt */}
+                        <div className="space-y-2">
+                          <Label>{t('negative.title')}</Label>
+                          <Input
+                            placeholder={t('negative.placeholder')}
+                            value={advanced.negativePrompt}
+                            onChange={(e) => setAdvanced(prev => ({ ...prev, negativePrompt: e.target.value }))}
+                          />
+                          <p className="text-xs text-muted-foreground">{t('negative.hint')}</p>
+                        </div>
+
+                        {/* Reset Advanced */}
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setAdvanced(storage.getDefaultAdvancedParams())}
+                          className="w-full"
+                        >
+                          Reset Advanced Parameters
+                        </Button>
+                      </CollapsibleContent>
+                    </Collapsible>
+
                     {/* Generate Button */}
                     <Button
                       onClick={generatePrompt}
@@ -669,36 +973,74 @@ export default function Home() {
                   </CardContent>
                 </Card>
 
-                {/* Quick Tips */}
-                <Card className="bg-gradient-to-br from-purple-50 to-pink-50 border-purple-200">
-                  <CardHeader>
-                    <CardTitle className="text-sm">{t('tips.title')}</CardTitle>
+                {/* Templates */}
+                <Card>
+                  <CardHeader className="pb-2">
+                    <div className="flex items-center justify-between">
+                      <CardTitle className="text-sm flex items-center gap-2">
+                        <FileText className="w-4 h-4" />
+                        {t('template.title')}
+                      </CardTitle>
+                      <Dialog open={isTemplateDialogOpen} onOpenChange={setIsTemplateDialogOpen}>
+                        <DialogTrigger asChild>
+                          <Button size="sm" variant="outline">
+                            <Save className="w-3 h-3 mr-1" />
+                            {t('template.save')}
+                          </Button>
+                        </DialogTrigger>
+                        <DialogContent>
+                          <DialogHeader>
+                            <DialogTitle>{t('template.save')}</DialogTitle>
+                          </DialogHeader>
+                          <div className="space-y-4 py-4">
+                            <div className="space-y-2">
+                              <Label>{t('template.name')}</Label>
+                              <Input
+                                placeholder={t('template.namePlaceholder')}
+                                value={newTemplateName}
+                                onChange={(e) => setNewTemplateName(e.target.value)}
+                              />
+                            </div>
+                          </div>
+                          <DialogFooter>
+                            <Button variant="outline" onClick={() => setIsTemplateDialogOpen(false)}>
+                              {t('groups.cancel')}
+                            </Button>
+                            <Button onClick={handleSaveTemplate}>
+                              {t('groups.save')}
+                            </Button>
+                          </DialogFooter>
+                        </DialogContent>
+                      </Dialog>
+                    </div>
                   </CardHeader>
-                  <CardContent className="text-sm space-y-2">
-                    <p>{t('tips.tip1')}</p>
-                    <p>{t('tips.tip2')}</p>
-                    <p>{t('tips.tip3')}</p>
-                    <p>{t('tips.tip4')}</p>
+                  <CardContent>
+                    {templates.length > 0 ? (
+                      <div className="space-y-2">
+                        {templates.map(template => (
+                          <div
+                            key={template.id}
+                            className="flex items-center justify-between p-2 rounded-md bg-muted/50 hover:bg-muted"
+                          >
+                            <span className="text-sm font-medium">{template.name}</span>
+                            <div className="flex gap-1">
+                              <Button size="sm" variant="ghost" onClick={() => handleApplyTemplate(template)}>
+                                {t('template.apply')}
+                              </Button>
+                              <Button size="sm" variant="ghost" onClick={() => handleDeleteTemplate(template.id)}>
+                                <Trash2 className="w-3 h-3" />
+                              </Button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-xs text-muted-foreground text-center py-4">
+                        {t('template.emptyHint')}
+                      </p>
+                    )}
                   </CardContent>
                 </Card>
-
-                {/* Highlight Legend */}
-                {showHighlight && (
-                  <Card>
-                    <CardHeader className="pb-2">
-                      <CardTitle className="text-sm flex items-center gap-2">
-                        <Highlighter className="w-4 h-4" />
-                        {t('highlight.toggle')}
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent className="flex flex-wrap gap-2">
-                      <Badge className={highlightColors.subject + ' border'}>{t('highlight.subject')}</Badge>
-                      <Badge className={highlightColors.style + ' border'}>{t('highlight.style')}</Badge>
-                      <Badge className={highlightColors.mood + ' border'}>{t('highlight.mood')}</Badge>
-                      <Badge className={highlightColors.parameter + ' border'}>{t('highlight.parameter')}</Badge>
-                    </CardContent>
-                  </Card>
-                )}
               </div>
 
               {/* Right: Output Section */}
@@ -738,6 +1080,16 @@ export default function Home() {
                             {renderHighlightedPrompt(generatedPrompt)}
                           </div>
                         </div>
+
+                        {showHighlight && (
+                          <div className="flex flex-wrap gap-2">
+                            <Badge className={highlightColors.subject + ' border'}>{t('highlight.subject')}</Badge>
+                            <Badge className={highlightColors.style + ' border'}>{t('highlight.style')}</Badge>
+                            <Badge className={highlightColors.mood + ' border'}>{t('highlight.mood')}</Badge>
+                            <Badge className={highlightColors.parameter + ' border'}>{t('highlight.parameter')}</Badge>
+                          </div>
+                        )}
+
                         <div className="flex gap-2">
                           <Button
                             onClick={() => copyToClipboard(generatedPrompt)}
@@ -785,48 +1137,16 @@ export default function Home() {
                   </CardContent>
                 </Card>
 
-                {/* Example Prompts */}
-                <Card>
+                {/* Quick Tips */}
+                <Card className="bg-gradient-to-br from-purple-50 to-pink-50 border-purple-200">
                   <CardHeader>
-                    <CardTitle className="text-sm">{t('examples.title')}</CardTitle>
-                    <CardDescription className="text-xs">
-                      {t('examples.description')}
-                    </CardDescription>
+                    <CardTitle className="text-sm">{t('tips.title')}</CardTitle>
                   </CardHeader>
-                  <CardContent className="space-y-3">
-                    {[
-                      {
-                        titleKey: 'examples.fantasy',
-                        prompt: "/imagine prompt: A mystical forest with glowing mushrooms and floating islands, fantasy style, magical mood, highly detailed, professional quality, 8k resolution --ar 16:9 --v 6"
-                      },
-                      {
-                        titleKey: 'examples.cyberpunk',
-                        prompt: "/imagine prompt: A futuristic cyberpunk character with neon lights, digital art style, energetic mood, highly detailed, professional quality, 8k resolution --ar 2:3 --v 6"
-                      },
-                      {
-                        titleKey: 'examples.abstract',
-                        prompt: "/imagine prompt: Flowing geometric shapes with vibrant colors, abstract style, peaceful mood, highly detailed, professional quality, 8k resolution --ar 1:1 --v 6"
-                      }
-                    ].map((example, index) => (
-                      <div
-                        key={index}
-                        className="p-3 rounded-lg bg-muted/50 hover:bg-muted cursor-pointer transition-colors group"
-                        onClick={() => {
-                          setGeneratedPrompt(example.prompt);
-                          toast.success(`${t('common.loading')}: ${t(example.titleKey)}`);
-                        }}
-                      >
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="flex-1 min-w-0">
-                            <p className="font-medium text-sm mb-1">{t(example.titleKey)}</p>
-                            <p className="text-xs text-muted-foreground truncate">
-                              {example.prompt}
-                            </p>
-                          </div>
-                          <Copy className="w-4 h-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0" />
-                        </div>
-                      </div>
-                    ))}
+                  <CardContent className="text-sm space-y-2">
+                    <p>{t('tips.tip1')}</p>
+                    <p>{t('tips.tip2')}</p>
+                    <p>{t('tips.tip3')}</p>
+                    <p>{t('tips.tip4')}</p>
                   </CardContent>
                 </Card>
               </div>
@@ -947,6 +1267,117 @@ export default function Home() {
             </Card>
           </TabsContent>
 
+          {/* Analyzer Tab */}
+          <TabsContent value="analyzer" className="space-y-6">
+            <div className="grid lg:grid-cols-2 gap-8">
+              <Card className="shadow-lg">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Scan className="w-5 h-5 text-primary" />
+                    {t('analyzer.title')}
+                  </CardTitle>
+                  <CardDescription>
+                    {t('analyzer.input')}
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <Textarea
+                    placeholder={t('analyzer.inputPlaceholder')}
+                    value={analyzerInput}
+                    onChange={(e) => setAnalyzerInput(e.target.value)}
+                    rows={6}
+                  />
+                  <Button onClick={handleAnalyze} className="w-full">
+                    <Scan className="w-4 h-4 mr-2" />
+                    {t('analyzer.analyze')}
+                  </Button>
+                </CardContent>
+              </Card>
+
+              <Card className="shadow-lg">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <FileText className="w-5 h-5 text-primary" />
+                    {t('analyzer.result')}
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {analysisResult ? (
+                    <div className="space-y-4">
+                      {analysisResult.subject && (
+                        <div>
+                          <Label className="text-xs text-muted-foreground">{t('analyzer.subject')}</Label>
+                          <p className="text-sm font-medium">{analysisResult.subject}</p>
+                        </div>
+                      )}
+                      {analysisResult.styles.length > 0 && (
+                        <div>
+                          <Label className="text-xs text-muted-foreground">{t('analyzer.styles')}</Label>
+                          <div className="flex flex-wrap gap-1 mt-1">
+                            {analysisResult.styles.map((s, i) => (
+                              <Badge key={i} variant="secondary" className="text-xs">{s}</Badge>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      {analysisResult.moods.length > 0 && (
+                        <div>
+                          <Label className="text-xs text-muted-foreground">{t('analyzer.moods')}</Label>
+                          <div className="flex flex-wrap gap-1 mt-1">
+                            {analysisResult.moods.map((m, i) => (
+                              <Badge key={i} variant="secondary" className="text-xs">{m}</Badge>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      {Object.keys(analysisResult.parameters).length > 0 && (
+                        <div>
+                          <Label className="text-xs text-muted-foreground">{t('analyzer.params')}</Label>
+                          <div className="flex flex-wrap gap-1 mt-1">
+                            {Object.entries(analysisResult.parameters).map(([k, v]) => (
+                              <Badge key={k} variant="outline" className="text-xs font-mono">
+                                --{k} {v}
+                              </Badge>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      {analysisResult.modifiers.length > 0 && (
+                        <div>
+                          <Label className="text-xs text-muted-foreground">{t('analyzer.modifiers')}</Label>
+                          <div className="flex flex-wrap gap-1 mt-1">
+                            {analysisResult.modifiers.map((m, i) => (
+                              <Badge key={i} variant="secondary" className="text-xs">{m}</Badge>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      {analysisResult.negatives.length > 0 && (
+                        <div>
+                          <Label className="text-xs text-muted-foreground">Negative ({t('negative.title')})</Label>
+                          <div className="flex flex-wrap gap-1 mt-1">
+                            {analysisResult.negatives.map((n, i) => (
+                              <Badge key={i} variant="destructive" className="text-xs">{n}</Badge>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      <Button onClick={handleUseAnalysis} className="w-full mt-4">
+                        <Wand2 className="w-4 h-4 mr-2" />
+                        {t('analyzer.useThis')}
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col items-center justify-center py-12 text-center text-muted-foreground">
+                      <Scan className="w-12 h-12 mb-4 opacity-20" />
+                      <p>Paste a prompt and click Analyze</p>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+          </TabsContent>
+
           {/* History Tab */}
           <TabsContent value="history" className="space-y-6">
             <Card className="shadow-lg">
@@ -962,7 +1393,6 @@ export default function Home() {
                     </CardDescription>
                   </div>
 
-                  {/* Group Dialog */}
                   <Dialog open={isGroupDialogOpen} onOpenChange={setIsGroupDialogOpen}>
                     <DialogTrigger asChild>
                       <Button variant="outline" size="sm">
@@ -1032,7 +1462,6 @@ export default function Home() {
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="all">{t('history.all')}</SelectItem>
-                      <SelectItem value="ungrouped">{t('groups.ungrouped')}</SelectItem>
                       {groups.map(g => (
                         <SelectItem key={g.id} value={g.id}>
                           <div className="flex items-center gap-2">

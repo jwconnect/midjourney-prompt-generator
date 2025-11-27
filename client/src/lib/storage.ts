@@ -1,6 +1,7 @@
-import type { SavedPrompt, PromptGroup, PromptHistory, FilterOptions } from '@/types';
+import type { SavedPrompt, PromptGroup, PromptHistory, FilterOptions, PromptTemplate, AdvancedParams } from '@/types';
 
 const STORAGE_KEY = 'midjourney-prompt-history';
+const TEMPLATE_STORAGE_KEY = 'midjourney-prompt-templates';
 
 function generateId(): string {
   return `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
@@ -251,5 +252,74 @@ export function getStatistics() {
     groupCount: history.groups.length,
     generatedCount: history.prompts.filter(p => p.source === 'generated').length,
     importedCount: history.prompts.filter(p => p.source === 'imported' || p.source === 'external').length,
+  };
+}
+
+// Template Operations
+function getTemplates(): PromptTemplate[] {
+  if (typeof window === 'undefined') return [];
+
+  const stored = localStorage.getItem(TEMPLATE_STORAGE_KEY);
+  if (!stored) return [];
+
+  try {
+    const parsed = JSON.parse(stored);
+    return parsed.map((t: PromptTemplate) => ({
+      ...t,
+      createdAt: new Date(t.createdAt),
+    }));
+  } catch {
+    return [];
+  }
+}
+
+function saveTemplates(templates: PromptTemplate[]): void {
+  if (typeof window === 'undefined') return;
+  localStorage.setItem(TEMPLATE_STORAGE_KEY, JSON.stringify(templates));
+}
+
+export function getAllTemplates(): PromptTemplate[] {
+  return getTemplates();
+}
+
+export function saveTemplate(templateData: Omit<PromptTemplate, 'id' | 'createdAt'>): PromptTemplate {
+  const templates = getTemplates();
+
+  const newTemplate: PromptTemplate = {
+    ...templateData,
+    id: generateId(),
+    createdAt: new Date(),
+  };
+
+  templates.unshift(newTemplate);
+  saveTemplates(templates);
+
+  return newTemplate;
+}
+
+export function deleteTemplate(id: string): boolean {
+  const templates = getTemplates();
+  const initialLength = templates.length;
+  const filtered = templates.filter(t => t.id !== id);
+
+  if (filtered.length !== initialLength) {
+    saveTemplates(filtered);
+    return true;
+  }
+  return false;
+}
+
+export function getDefaultAdvancedParams(): AdvancedParams {
+  return {
+    stylize: null,
+    chaos: null,
+    weird: null,
+    quality: null,
+    seed: null,
+    stop: null,
+    tile: false,
+    negativePrompt: '',
+    sref: '',
+    srefWeight: null,
   };
 }
